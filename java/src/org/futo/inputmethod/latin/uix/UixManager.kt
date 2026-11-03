@@ -298,7 +298,8 @@ class UixActionKeyboardManager(val uixManager: UixManager, val latinIME: LatinIM
     override fun typeUri(
         uri: Uri,
         mimeTypes: List<String>,
-        ignoreConnectionOverride: Boolean
+        ignoreConnectionOverride: Boolean,
+        showFailureToast: Boolean
     ): Boolean {
         if(mimeTypes.isEmpty()) {
             Log.w("UixManager", "mimeTypes is empty")
@@ -334,7 +335,7 @@ class UixActionKeyboardManager(val uixManager: UixManager, val latinIME: LatinIM
             InputConnectionCompat.INPUT_CONTENT_GRANT_READ_URI_PERMISSION,
             null
         ).let { result ->
-            if(!result) {
+            if(!result && showFailureToast) {
                 val toast = Toast.makeText(
                     latinIME,
                     latinIME.getString(R.string.action_clipboard_manager_error_app_image_insertion_unsupported),

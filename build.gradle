@@ -244,6 +244,12 @@ android {
     }
 
 
+    def escapeBuildConfigString = { String value ->
+        value.replace("\\", "\\\\").replace("\"", "\\\"")
+    }
+    final def tenorApiKey = (project.findProperty("tenorApiKey") ?: System.getenv("TENOR_API_KEY") ?: "").toString()
+    final def giphyApiKey = (project.findProperty("giphyApiKey") ?: System.getenv("GIPHY_API_KEY") ?: "").toString()
+
     buildTypes {
         debug {
             minifyEnabled false
@@ -269,6 +275,11 @@ android {
                 it.buildConfigField "String", "ACRA_USER", "\"\""
                 it.buildConfigField "String", "ACRA_PASSWORD", "\"\""
             }
+
+            // Optional build-time defaults for the online GIF search action. The keys can also
+            // be entered at runtime in Settings > Actions > GIF search.
+            it.buildConfigField "String", "TENOR_API_KEY", "\"${escapeBuildConfigString(tenorApiKey)}\""
+            it.buildConfigField "String", "GIPHY_API_KEY", "\"${escapeBuildConfigString(giphyApiKey)}\""
 
             //it.buildConfigField "String", "FUTOPAY_URL", "\"https://pay.futo.org/api/PaymentPortal?product=voiceinput&success=futo-keyboard%3a%2f%2flicense%2factivate\""
             it.buildConfigField "String", "FUTOPAY_URL", "\"https://pay2.futo.org/checkout/polar/futo-keyboard/futo-keyboard-voiceinput/checkout-ready?success=redirect-to-organization-page\""

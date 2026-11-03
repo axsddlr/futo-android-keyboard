@@ -46,6 +46,21 @@ You can then open the project in Android Studio and build it that way, or use gr
 ./gradlew assembleStableRelease
 ```
 
+## Optional GIF search
+
+This fork adds an opt-in GIF search action (Settings → Actions → GIFs), pinned to the keyboard toolbar by default. It is disabled by default, and the keyboard makes no network requests unless you enable it and add an API key.
+
+When enabled, the action searches Tenor or GIPHY and inserts the selected GIF into the current app as an animated image. Search terms and your IP address are sent to the selected provider; no search history is stored on the device.
+
+You need a free API key from one of these providers:
+
+- Tenor: https://developers.google.com/tenor/guides/quickstart
+- GIPHY: https://developers.giphy.com/dashboard/
+
+Enter the key in Settings, or supply it at build time with `-PtenorApiKey=...` / `-PgiphyApiKey=...` (or the `TENOR_API_KEY` / `GIPHY_API_KEY` environment variables).
+
+Recent and saved GIFs are kept on-device (long-press a GIF to save it or copy it). If an app rejects keyboard image insertion, the GIF is placed on the clipboard instead.
+
 ## APK signing
 
 For official FUTO Keyboard versions, you can verify the APK's signing key fingerprint for integrity.
