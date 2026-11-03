@@ -60,7 +60,12 @@ interface KeyboardManagerForAction {
 
     fun typeText(v: String)
     fun typeTextSurroundedByWhitespace(v: String)
-    fun typeUri(uri: Uri, mimeTypes: List<String>, ignoreConnectionOverride: Boolean = false): Boolean
+    fun typeUri(
+        uri: Uri,
+        mimeTypes: List<String>,
+        ignoreConnectionOverride: Boolean = false,
+        showFailureToast: Boolean = true
+    ): Boolean
     fun appSupportsImageInsertion(schema: String, ignoreConnectionOverride: Boolean): Boolean
     fun backspace(amount: Int)
 
