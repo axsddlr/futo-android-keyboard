@@ -839,7 +839,15 @@ class UixManager(private val latinIME: LatinIME) {
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(with(LocalDensity.current) {
-                            currWindowActionWindow.value?.fixedWindowHeight ?: ((latinIME
+                            val window = currWindowActionWindow.value
+                            val fixedHeight = when {
+                                window == null -> null
+                                mainKeyboardHidden.value ->
+                                    window.expandedWindowHeight ?: window.fixedWindowHeight
+                                else -> window.fixedWindowHeight
+                            }
+
+                            fixedHeight ?: ((latinIME
                                 .getInputViewHeight()
                                 .toFloat() / heightDiv.toFloat()).toDp() +
                                     if (actionsExpanded) ActionBarHeight else 0.dp)

@@ -5,8 +5,10 @@ import android.content.ContentValues
 import android.content.Context
 import android.content.UriMatcher
 import android.database.Cursor
+import android.database.MatrixCursor
 import android.net.Uri
 import android.os.ParcelFileDescriptor
+import android.provider.OpenableColumns
 import org.futo.inputmethod.latin.BuildConfig
 import java.io.File
 import java.util.UUID
@@ -65,7 +67,21 @@ class ClipboardProvider: ContentProvider() {
         selectionArgs: Array<out String?>?,
         sortOrder: String?
     ): Cursor? {
-        return null
+        val uuid = getUUID(uri)
+        val request = ClipboardProviderState.requests[uuid] ?: return null
+
+        val columns = projection
+            ?.takeIf { it.isNotEmpty() }
+            ?: arrayOf(OpenableColumns.DISPLAY_NAME, OpenableColumns.SIZE)
+        val cursor = MatrixCursor(columns, 1)
+        cursor.addRow(columns.map { column ->
+            when (column) {
+                OpenableColumns.DISPLAY_NAME -> request.file.name
+                OpenableColumns.SIZE -> request.file.length()
+                else -> null
+            }
+        })
+        return cursor
     }
 
     private fun getUUID(uri: Uri): UUID {

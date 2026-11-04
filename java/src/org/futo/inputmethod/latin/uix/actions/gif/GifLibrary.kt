@@ -22,15 +22,17 @@ data class StoredGif(
     val fullUrl: String,
     val provider: String,
     val favorite: Boolean = false,
-    val lastUsed: Long = 0L
+    val lastUsed: Long = 0L,
+    val width: Int = 0,
+    val height: Int = 0
 ) {
     fun toGifItem(): GifItem = GifItem(
         id = id,
         title = title,
         previewUrl = previewUrl,
         fullUrl = fullUrl,
-        width = 0,
-        height = 0,
+        width = width,
+        height = height,
         provider = provider
     )
 }
@@ -69,7 +71,9 @@ object GifLibraryCodec {
             fullUrl = item.fullUrl,
             provider = provider.id,
             favorite = existing?.favorite == true,
-            lastUsed = now
+            lastUsed = now,
+            width = item.width,
+            height = item.height
         )
 
         return normalize(
@@ -91,7 +95,9 @@ object GifLibraryCodec {
             fullUrl = item.fullUrl,
             provider = provider.id,
             favorite = existing?.favorite != true,
-            lastUsed = now
+            lastUsed = now,
+            width = item.width,
+            height = item.height
         )
 
         return normalize(

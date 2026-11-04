@@ -1,12 +1,14 @@
 package org.futo.inputmethod.latin.uix.actions.gif
 
+import android.content.ClipData
+import android.content.Context
 import android.content.Intent
 import android.net.Uri
+import android.util.Log
 import android.widget.Toast
 import androidx.annotation.StringRes
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -20,11 +22,11 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.lazy.grid.GridCells
-import androidx.compose.foundation.lazy.grid.GridItemSpan
-import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
-import androidx.compose.foundation.lazy.grid.items
-import androidx.compose.foundation.lazy.grid.rememberLazyGridState
+import androidx.compose.foundation.lazy.staggeredgrid.LazyVerticalStaggeredGrid
+import androidx.compose.foundation.lazy.staggeredgrid.StaggeredGridCells
+import androidx.compose.foundation.lazy.staggeredgrid.StaggeredGridItemSpan
+import androidx.compose.foundation.lazy.staggeredgrid.items
+import androidx.compose.foundation.lazy.staggeredgrid.rememberLazyStaggeredGridState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -64,6 +66,7 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -95,6 +98,22 @@ private class GifActionWindow(
 ) : ActionWindow() {
     private val searchText = mutableStateOf("")
     private val searching = mutableStateOf(false)
+
+    override val expandedWindowHeight: Dp
+        get() {
+            val metrics = manager.getContext().resources.displayMetrics
+            return (metrics.heightPixels / metrics.density * 0.52f).dp
+        }
+
+    /**
+     * Search mode shows the keyboard below the panel. Keep enough room for the search field,
+     * chips and several result rows instead of collapsing to a single row.
+     */
+    override val fixedWindowHeight: Dp
+        get() {
+            val metrics = manager.getContext().resources.displayMetrics
+            return (metrics.heightPixels / metrics.density * 0.42f).dp
+        }
 
     @Composable
     override fun windowName(): String = stringResource(R.string.action_gif_title)
@@ -251,7 +270,7 @@ private fun GifSearchPanel(
     var downloadingKey by remember { mutableStateOf<String?>(null) }
     var generation by remember { mutableIntStateOf(0) }
     var autoLoadCursor by remember { mutableStateOf<String?>(null) }
-    val gridState = rememberLazyGridState()
+    val gridState = rememberLazyStaggeredGridState()
 
     val networkMode = query.isNotBlank() || mode == GifMode.Trending
     val displayGifs = when {
@@ -362,43 +381,64 @@ private fun GifSearchPanel(
 
             GifLibrary.recordUse(context, item, itemProvider)
             GifCache.prune(context)
-            val uri = GifCache.registerForInsertion(file)
+            // Keep the URI alive long enough for the share-sheet fallback and its upload.
+            val uri = GifCache.registerForInsertion(
+                file,
+                lifetimeMillis = 30L * 60L * 1000L
+            )
             manager.performHapticAndAudioFeedback(Constants.CODE_TAB, view)
 
-            val inserted = try {
-                manager.typeUri(
-                    uri,
-                    listOf("image/gif"),
-                    showFailureToast = false
-                )
+            val ignoreOverride = searching.value
+            val latinIME = manager.getLatinIMEForDebug()
+            val editorInfo = if (ignoreOverride) {
+                latinIME.getBaseInputEditorInfo()
+            } else {
+                latinIME.currentInputEditorInfo
+            }
+
+            Log.d(
+                "GifAction",
+                "pkg=${editorInfo?.packageName} mimes=${editorInfo?.contentMimeTypes?.joinToString()}"
+            )
+
+            val supportsImageInsertion = try {
+                manager.appSupportsImageInsertion("image/gif", ignoreOverride)
             } catch (_: Exception) {
                 false
             }
 
+            var inserted = false
+            if (supportsImageInsertion) {
+                inserted = try {
+                    manager.typeUri(
+                        uri,
+                        // Gboard commits a single MIME type selected from the editor's
+                        // supported list; don't advertise a wildcard alongside it.
+                        listOf("image/gif"),
+                        ignoreConnectionOverride = ignoreOverride,
+                        showFailureToast = false
+                    )
+                } catch (_: Exception) {
+                    false
+                }
+            }
+
+            Log.d(
+                "GifAction",
+                "supportsImageInsertion=$supportsImageInsertion commitContent=$inserted searching=$ignoreOverride"
+            )
+
+            downloadingKey = null
             if (inserted) {
-                downloadingKey = null
                 manager.closeActionWindow()
                 return@launch
             }
 
-            // Some editors reject commitContent; fall back to the clipboard so the GIF can
-            // still be pasted into the app.
-            val copied = GifCache.copyToClipboard(context, uri)
-            downloadingKey = null
-            if (copied) {
-                Toast.makeText(
-                    context,
-                    R.string.action_gif_clipboard_fallback,
-                    Toast.LENGTH_SHORT
-                ).show()
-                manager.closeActionWindow()
-            } else {
-                Toast.makeText(
-                    context,
-                    R.string.action_gif_insert_failed,
-                    Toast.LENGTH_SHORT
-                ).show()
-            }
+            // Gboard's fallback is not a clipboard paste: it sends the image URI through a
+            // share intent so the target app (e.g. Google Chat) can attach it itself. This
+            // works even when the editor advertises no image insertion support.
+            shareGif(context, uri, item.title)
+            manager.closeActionWindow()
         }
     }
 
@@ -471,22 +511,24 @@ private fun GifSearchPanel(
     }
 
     Column(Modifier.fillMaxSize()) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 8.dp, vertical = 2.dp),
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            GifMode.entries.forEach { candidate ->
-                FilterChip(
-                    selected = query.isBlank() && mode == candidate,
-                    onClick = {
-                        mode = candidate
-                        searchText.value = ""
-                        searching.value = false
-                    },
-                    label = { Text(stringResource(candidate.label)) }
-                )
+        if (query.isBlank()) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 8.dp, vertical = 2.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                GifMode.entries.forEach { candidate ->
+                    FilterChip(
+                        selected = query.isBlank() && mode == candidate,
+                        onClick = {
+                            mode = candidate
+                            searchText.value = ""
+                            searching.value = false
+                        },
+                        label = { Text(stringResource(candidate.label)) }
+                    )
+                }
             }
         }
 
@@ -524,28 +566,40 @@ private fun GifSearchPanel(
                     style = MaterialTheme.typography.bodyMedium
                 )
 
-                else -> LazyVerticalGrid(
-                    columns = GridCells.Fixed(3),
+                else -> LazyVerticalStaggeredGrid(
+                    columns = if (query.isNotBlank()) {
+                        StaggeredGridCells.Fixed(3)
+                    } else {
+                        StaggeredGridCells.Adaptive(150.dp)
+                    },
                     state = gridState,
                     modifier = Modifier
                         .fillMaxSize()
                         .padding(horizontal = 8.dp),
                     contentPadding = PaddingValues(top = 4.dp, bottom = 4.dp),
                     horizontalArrangement = Arrangement.spacedBy(4.dp),
-                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                    verticalItemSpacing = 4.dp
                 ) {
                     items(displayGifs, key = { it.fullUrl }) { item ->
+                        val ratio = if (item.width > 0 && item.height > 0) {
+                            (item.width.toFloat() / item.height.toFloat())
+                                .coerceIn(0.55f, 1.8f)
+                        } else {
+                            1.0f
+                        }
+
                         GifCell(
                             item = item,
                             downloading = downloadingKey == item.fullUrl,
                             favorite = favoriteKeys.contains(providerFor(item).id to item.id),
+                            aspectRatio = ratio,
                             onClick = { insert(item) },
                             onLongClick = { showOptions(item) }
                         )
                     }
 
                     if (networkMode) {
-                        item(span = { GridItemSpan(maxLineSpan) }) {
+                        item(span = StaggeredGridItemSpan.FullLine) {
                             Box(
                                 Modifier.fillMaxWidth().padding(8.dp),
                                 contentAlignment = Alignment.Center
@@ -574,8 +628,7 @@ private fun GifSearchPanel(
             }
         }
 
-        GifAttributionRow(
-            provider = provider,
+        GifStatusRow(
             busy = networkMode && (loading || loadingMore),
             error = if (networkMode && displayGifs.isNotEmpty()) error else null
         )
@@ -610,6 +663,7 @@ private fun GifCell(
     item: GifItem,
     downloading: Boolean,
     favorite: Boolean,
+    aspectRatio: Float,
     onClick: () -> Unit,
     onLongClick: () -> Unit
 ) {
@@ -620,7 +674,7 @@ private fun GifCell(
 
     Box(
         modifier = Modifier
-            .aspectRatio(1.0f)
+            .aspectRatio(aspectRatio)
             .clip(RoundedCornerShape(8.dp))
             .background(LocalKeyboardScheme.current.keyboardContainer)
             .combinedClickable(
@@ -676,15 +730,18 @@ private fun GifCell(
 }
 
 @Composable
-private fun GifAttributionRow(
-    provider: GifProviderKind,
+private fun GifStatusRow(
     busy: Boolean,
     error: String?
 ) {
-    val context = LocalContext.current
-    val providerUrl = if (provider == GifProviderKind.Tenor) "https://tenor.com" else "https://giphy.com"
+    if (!busy && error == null) return
 
-    Column(Modifier.fillMaxWidth()) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 12.dp, vertical = 2.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
         if (error != null) {
             Text(
                 error,
@@ -692,39 +749,46 @@ private fun GifAttributionRow(
                 color = MaterialTheme.colorScheme.error,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 12.dp, vertical = 2.dp)
+                modifier = Modifier.weight(1f)
             )
+        } else {
+            Spacer(Modifier.weight(1f))
         }
 
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 12.dp, vertical = 2.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Text(
-                stringResource(R.string.action_gif_powered_by, provider.displayName),
-                style = MaterialTheme.typography.labelSmall,
-                color = LocalKeyboardScheme.current.onKeyboardContainer.copy(alpha = 0.7f),
-                modifier = Modifier.clickable {
-                    try {
-                        context.startActivity(
-                            Intent(Intent.ACTION_VIEW, Uri.parse(providerUrl))
-                                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                        )
-                    } catch (_: Exception) {
-                        // Ignore if no browser is available.
-                    }
-                }
-            )
-            Spacer(Modifier.weight(1.0f))
-
-            if (busy) {
-                CircularProgressIndicator(Modifier.size(14.dp), strokeWidth = 1.5.dp)
-            }
+        if (busy) {
+            CircularProgressIndicator(Modifier.size(14.dp), strokeWidth = 1.5.dp)
         }
+    }
+}
+
+private fun shareGif(context: Context, uri: Uri, title: String) {
+    val send = Intent(Intent.ACTION_SEND).apply {
+        type = "image/gif"
+        putExtra(Intent.EXTRA_STREAM, uri)
+        clipData = ClipData.newUri(
+            context.contentResolver,
+            title.ifBlank { "GIF" },
+            uri
+        )
+        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+    }
+
+    val chooser = Intent.createChooser(
+        send,
+        context.getString(R.string.action_gif_share)
+    ).apply {
+        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+    }
+
+    try {
+        context.startActivity(chooser)
+    } catch (_: Exception) {
+        Toast.makeText(
+            context,
+            R.string.action_gif_insert_failed,
+            Toast.LENGTH_SHORT
+        ).show()
     }
 }
 

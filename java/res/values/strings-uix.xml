@@ -723,7 +723,6 @@ Default is %1$s</string>
     <string name="action_gif_enable">Enable GIF search</string>
     <string name="action_gif_missing_key">Add a %1$s API key in Settings to start searching.</string>
     <string name="action_gif_open_settings">Open GIF settings</string>
-    <string name="action_gif_powered_by">Powered by %1$s</string>
     <string name="action_gif_no_results">No GIFs found</string>
     <string name="action_gif_load_more">Load more</string>
     <string name="action_gif_no_more_results">No more results</string>
@@ -761,7 +760,7 @@ Default is %1$s</string>
     <string name="action_gif_cancel">Cancel</string>
     <string name="action_gif_copied">GIF copied to clipboard</string>
     <string name="action_gif_copy_failed">Could not copy GIF</string>
-    <string name="action_gif_clipboard_fallback">App cannot insert images; GIF copied to clipboard</string>
+    <string name="action_gif_share">Share GIF</string>
     <string name="action_gif_insert_failed">Could not insert GIF</string>
     <string name="action_gif_favorite_added">Saved to favorites</string>
     <string name="action_gif_favorite_removed">Removed from favorites</string>

@@ -137,6 +137,14 @@ abstract class ActionWindow {
     open val fixedWindowHeight: Dp?
         get() = null
 
+    /**
+     * Optional taller height used only while the main keyboard is hidden. Lets browse-style
+     * action windows (for example the GIF grid) use more of the screen without colliding with
+     * the keyboard when a text field is focused.
+     */
+    open val expandedWindowHeight: Dp?
+        get() = null
+
     @Composable
     abstract fun windowName(): String
 
